@@ -17,12 +17,16 @@ from services.search_service import semantic_search
 from models.search_models import SearchRequest
 app = FastAPI()
 
+# backend/main.py
+import os
+
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,
 )
 
 class CloneRequest(BaseModel):
@@ -30,8 +34,11 @@ class CloneRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the AI Codebase Platform API"}
-
+    return {
+        "status": "ok",
+        "message": "AI Codebase Knowledge Platform API is running"
+    }
+    
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -199,3 +206,4 @@ def ask(request: AskRequest):
         "repo_name": request.repo_name,
         **answer,
     }
+    
