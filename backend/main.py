@@ -15,6 +15,15 @@ from services.search_service import semantic_search
 from services.groq_service import generate_answer
 from services.search_service import semantic_search
 from models.search_models import SearchRequest
+from services.unified_ast_service import parse_repository_ast
+from services.dependency_graph_service import build_dependency_graph, find_circular_dependencies
+from services.unified_ast_service import parse_repository_ast
+from services.cache import set_cached_ast, set_cached_graph
+from services.callgraph_service import build_call_graph, build_call_graph_networkx
+from models.explain_models import FileExplanationRequest
+from services.explain_service import explain_file
+from services.cache import get_cached_ast, get_cached_graph
+
 app = FastAPI()
 
 # backend/main.py
@@ -207,3 +216,114 @@ def ask(request: AskRequest):
         **answer,
     }
     
+   
+
+@app.post("/analyze")
+def analyze(request: CloneRequest):
+    import os
+    from services.git_service import get_repo_name, REPOS_DIR
+
+    repo_name = get_repo_name(request.github_url)
+    local_path = os.path.join(REPOS_DIR, repo_name)
+
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Repository not cloned yet. Call /clone first.")
+
+    parsed = parse_repository(local_path, repo_name)
+    ast_results = parse_repository_ast(parsed.files)
+    set_cached_ast(repo_name, ast_results)
+
+    total_functions = sum(len(r.functions) for r in ast_results)
+    total_classes = sum(len(r.classes) for r in ast_results)
+    files_with_errors = [r.file_path for r in ast_results if r.parse_error]
+
+    return {
+        "repo_name": repo_name,
+        "python_files_analyzed": len(ast_results),
+        "total_functions": total_functions,
+        "total_classes": total_classes,
+        "files_with_syntax_errors": files_with_errors,
+        "sample_functions": [
+            {
+                "name": f.name,
+                "file": f.file_path,
+                "lines": f"{f.start_line}-{f.end_line}",
+                "arguments": f.arguments,
+                "is_method": f.is_method,
+                "parent_class": f.parent_class,
+            }
+            for r in ast_results for f in r.functions[:3]
+        ][:10],
+    }
+    
+@app.post("/dependencies")
+def dependencies(request: CloneRequest):
+    import os
+    from services.git_service import get_repo_name, REPOS_DIR
+
+    repo_name = get_repo_name(request.github_url)
+    local_path = os.path.join(REPOS_DIR, repo_name)
+
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Repository not cloned yet. Call /clone first.")
+
+    parsed = parse_repository(local_path, repo_name)
+    ast_results = parse_repository_ast(parsed.files)
+    set_cached_ast(repo_name, ast_results)
+
+    result, graph = build_dependency_graph(ast_results, repo_name)
+    set_cached_graph(repo_name, graph)
+
+    cycles = find_circular_dependencies(graph)
+
+    return {
+        **result.model_dump(exclude={"edges"}),  # omit raw edges from the summary response (can be large)
+        "sample_edges": [e.model_dump() for e in result.edges[:15]],
+        "circular_dependencies": cycles[:5],  # cap in case there are many
+        "has_circular_dependencies": len(cycles) > 0,
+    }
+    
+@app.post("/callgraph")
+def callgraph(request: CloneRequest):
+    import os
+    from services.git_service import get_repo_name, REPOS_DIR
+
+    repo_name = get_repo_name(request.github_url)
+    local_path = os.path.join(REPOS_DIR, repo_name)
+
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Repository not cloned yet. Call /clone first.")
+
+    parsed = parse_repository(local_path, repo_name)
+    ast_results = parse_repository_ast(parsed.files)
+
+    result = build_call_graph(ast_results, repo_name)
+
+    return {
+        "repo_name": result.repo_name,
+        "total_calls_found": result.total_calls_found,
+        "total_resolved": result.total_resolved,
+        "total_unresolved": result.total_unresolved,
+        "resolution_rate": round(result.total_resolved / max(result.total_calls_found, 1) * 100, 1),
+        "most_called_functions": result.most_called_functions,
+        "sample_calls": [c.model_dump() for c in result.calls[:15]],
+    }
+    
+
+@app.post("/explain-file")
+def explain_file_endpoint(request: FileExplanationRequest):
+    ast_results = get_cached_ast(request.repo_name)
+    dependency_graph = get_cached_graph(request.repo_name)
+
+    if ast_results is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Repository not analyzed yet. Call /analyze and /dependencies first."
+        )
+
+    try:
+        result = explain_file(request.file_path, ast_results, dependency_graph)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return result

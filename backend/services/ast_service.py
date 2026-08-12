@@ -101,6 +101,7 @@ class PythonASTVisitor(ast.NodeVisitor):
             module=module,
             imported_names=[alias.name for alias in node.names],
             is_relative=node.level > 0,
+            level=node.level,
         ))
 
     def visit_Call(self, node):

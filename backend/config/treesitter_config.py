@@ -1,5 +1,7 @@
+# backend/config/treesitter_config.py
+
 # Maps your internal language labels (from Step 3's EXTENSION_LANGUAGE_MAP) to
-# the language name tree-sitter-language-pack expects
+# the language name tree-sitter-languages expects
 TREESITTER_LANGUAGE_MAP = {
     "javascript": "javascript",
     "typescript": "typescript",

@@ -1,52 +1,118 @@
-# ==========================
+  # ==========================
 # Operating System
 # ==========================
+
 .DS_Store
 Thumbs.db
+
 
 # ==========================
 # IDE
 # ==========================
+
 .vscode/
 .idea/
+
 
 # ==========================
 # Logs
 # ==========================
+
 *.log
+
 
 # ==========================
 # Environment Files
 # ==========================
+
 .env
 .env.local
+.env.*
+
 
 # ==========================
 # Python
 # ==========================
+
+__pycache__/
 **/__pycache__/
+
 *.py[cod]
 *.pyo
+
 
 # ==========================
 # Virtual Environments
 # ==========================
+
+venv/
+.venv/
 **/venv/
 **/.venv/
+
 
 # ==========================
 # Node
 # ==========================
+
+node_modules/
 **/node_modules/
+
+.next/
 **/.next/
+
 
 # ==========================
 # Coverage
 # ==========================
+
 .coverage
 coverage/
+.pytest_cache/
+
 
 # ==========================
-# Misc
+# Local Repository Data
 # ==========================
+
+repos/
+
+
+# ==========================
+# Vector Database / Chroma
+# ==========================
+
+chroma_data/
+
+
+# ==========================
+# Generated Call Graph Data
+# ==========================
+
+callgraph_output/
+callgraph_*.json
+
+
+# ==========================
+# Generated Images / Test Files
+# ==========================
+
+config/*.png
+
+
+# ==========================
+# Database
+# ==========================
+
 *.sqlite3
+
+
+# ==========================
+# Temporary Files
+# ==========================
+
+*.tmp
+*.temp
+config/*.png
+# Generated images
+backend/config/*.png

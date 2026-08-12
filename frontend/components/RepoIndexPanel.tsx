@@ -47,7 +47,6 @@ export default function RepoIndexPanel({ onIndexed }: Props) {
       });
 
       setStatus("indexed");
-
       onIndexed(result.repo_name);
     } catch (err: any) {
       setStatus("error");
@@ -56,15 +55,15 @@ export default function RepoIndexPanel({ onIndexed }: Props) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow border p-6 space-y-4">
+    <div className="space-y-5 rounded-xl border p-6 bg-white shadow-sm">
 
       <div>
-        <h2 className="text-lg font-semibold">
+        <h2 className="text-xl font-semibold">
           Repository Index
         </h2>
 
         <p className="text-sm text-gray-500 mt-1">
-          Paste any public GitHub repository URL and index it for AI search.
+          Paste a public GitHub repository URL and index it for semantic AI search.
         </p>
       </div>
 
@@ -77,6 +76,11 @@ export default function RepoIndexPanel({ onIndexed }: Props) {
           value={url}
           disabled={status === "indexing"}
           onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && status !== "indexing" && url) {
+              handleIndex();
+            }
+          }}
         />
 
         <button
@@ -95,24 +99,42 @@ export default function RepoIndexPanel({ onIndexed }: Props) {
 
       </div>
 
-      {status === "indexing" && (
-        <p className="text-sm text-gray-500">
-          Cloning repository, parsing files, generating embeddings and
-          storing vectors...
+      {/* Render Free cold start notice */}
+
+      {status !== "indexing" && (
+        <p className="text-xs text-gray-400">
+          ⚡ First request after inactivity may take up to a minute because the backend runs on Render's free tier.
         </p>
       )}
 
-      {status === "indexed" && stats && (
-        <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 p-3 text-green-700">
+      {/* Progress */}
 
-          <CheckCircle2 className="w-5 h-5" />
+      {status === "indexing" && (
+        <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+          <p className="text-sm text-blue-700 font-medium">
+            Indexing repository...
+          </p>
+
+          <p className="text-xs text-blue-600 mt-1">
+            Cloning repository, parsing files, generating embeddings and storing vectors.
+            This usually takes 10–60 seconds depending on repository size.
+          </p>
+        </div>
+      )}
+
+      {/* Success */}
+
+      {status === "indexed" && stats && (
+        <div className="flex items-center gap-3 rounded-lg bg-green-50 border border-green-200 p-4 text-green-700">
+
+          <CheckCircle2 className="w-6 h-6 shrink-0" />
 
           <div>
-            <p className="font-medium">
+            <p className="font-semibold">
               Repository indexed successfully!
             </p>
 
-            <p className="text-sm">
+            <p className="text-sm mt-1">
               Files Indexed: <strong>{stats.files}</strong>
               {" • "}
               Chunks Stored: <strong>{stats.chunks}</strong>
@@ -122,10 +144,12 @@ export default function RepoIndexPanel({ onIndexed }: Props) {
         </div>
       )}
 
-      {status === "error" && error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-red-700">
+      {/* Error */}
 
-          <XCircle className="w-5 h-5" />
+      {status === "error" && error && (
+        <div className="flex items-center gap-3 rounded-lg bg-red-50 border border-red-200 p-4 text-red-700">
+
+          <XCircle className="w-6 h-6 shrink-0" />
 
           <span>{error}</span>
 

@@ -2,67 +2,69 @@
 from services.embedding_service import embedding_service
 from services.vector_db_service import get_collection
 from models.search_models import SearchRequest, SearchResponse, SearchResultItem
+from config.rerank_config import INITIAL_RETRIEVAL_K, FINAL_TOP_K
 
-def semantic_search(request: SearchRequest) -> SearchResponse:
+
+def _load_rerank_service():
+    try:
+        from services.rerank_service import rerank_service
+        return rerank_service
+    except ModuleNotFoundError:
+        return None
+
+
+def semantic_search(request: SearchRequest, use_reranking: bool = True) -> SearchResponse:
     collection = get_collection()
 
-    # Quick check: does this repo have any chunks at all?
-    # This avoids a confusing empty-but-technically-successful query when the
-    # real issue is "this repo was never indexed"
     existing = collection.get(where={"repo_name": request.repo_name}, limit=1)
     if not existing["ids"]:
-        return SearchResponse(
-            query=request.query,
-            repo_name=request.repo_name,
-            results=[],
-            result_count=0,
-        )
+        return SearchResponse(query=request.query, repo_name=request.repo_name, results=[], result_count=0)
 
-    # Embed the query using the QUERY-specific method (with bge instruction prefix)
     query_vector = embedding_service.embed_query(request.query)
 
-    # Build metadata filter — always scope to the repo, optionally to a language
     where_filter = {"repo_name": request.repo_name}
     if request.language_filter:
-        where_filter = {
-            "$and": [
-                {"repo_name": request.repo_name},
-                {"language": request.language_filter},
-            ]
-        }
+        where_filter = {"$and": [{"repo_name": request.repo_name}, {"language": request.language_filter}]}
+
+    # STAGE 1: broad retrieval — pull more candidates than we'll actually use
+    retrieval_k = INITIAL_RETRIEVAL_K if use_reranking else request.top_k
 
     raw_results = collection.query(
         query_embeddings=[query_vector],
-        n_results=request.top_k,
+        n_results=retrieval_k,
         where=where_filter,
         include=["documents", "metadatas", "distances"],
     )
 
-    results: list[SearchResultItem] = []
-
+    candidates: list[SearchResultItem] = []
     if raw_results["ids"] and raw_results["ids"][0]:
         for i in range(len(raw_results["ids"][0])):
             distance = raw_results["distances"][0][i]
-            # ChromaDB with cosine space returns distance in [0, 2]; convert to similarity [0, 1]
             similarity = 1 - (distance / 2)
-
             metadata = raw_results["metadatas"][0][i]
-            document = raw_results["documents"][0][i]
-            chunk_id = raw_results["ids"][0][i]
 
-            results.append(SearchResultItem(
-                chunk_id=chunk_id,
+            candidates.append(SearchResultItem(
+                chunk_id=raw_results["ids"][0][i],
                 file_path=metadata["file_path"],
                 language=metadata["language"],
                 start_line=metadata["start_line"],
                 end_line=metadata["end_line"],
-                content=document,
+                content=raw_results["documents"][0][i],
                 similarity_score=round(similarity, 4),
             ))
+
+    if use_reranking and candidates:
+        rerank_service = _load_rerank_service()
+        if rerank_service is not None:
+            final_results = rerank_service.rerank(request.query, candidates, top_k=FINAL_TOP_K)
+        else:
+            final_results = candidates[:request.top_k]
+    else:
+        final_results = candidates[:request.top_k]
 
     return SearchResponse(
         query=request.query,
         repo_name=request.repo_name,
-        results=results,
-        result_count=len(results),
+        results=final_results,
+        result_count=len(final_results),
     )

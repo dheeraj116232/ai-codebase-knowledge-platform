@@ -1,8 +1,10 @@
+# backend/services/unified_ast_service.py
 from services.ast_service import parse_python_ast
 from services.treesitter_service import parse_with_treesitter
+from models.file_models import ParsedFile
 from models.ast_models import FileASTResult
 
-def parse_file_ast(parsed_file) -> FileASTResult:
+def parse_file_ast(parsed_file: ParsedFile) -> FileASTResult:
     if not parsed_file.content:
         return FileASTResult(file_path=parsed_file.path, functions=[], classes=[], imports=[])
 
@@ -11,7 +13,7 @@ def parse_file_ast(parsed_file) -> FileASTResult:
     else:
         return parse_with_treesitter(parsed_file.content, parsed_file.path, parsed_file.language)
 
-def parse_repository_ast(parsed_files) -> list[FileASTResult]:
+def parse_repository_ast(parsed_files: list[ParsedFile]) -> list[FileASTResult]:
     results = []
     for pf in parsed_files:
         if pf.content:
