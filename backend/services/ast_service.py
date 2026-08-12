@@ -101,7 +101,6 @@ class PythonASTVisitor(ast.NodeVisitor):
             module=module,
             imported_names=[alias.name for alias in node.names],
             is_relative=node.level > 0,
-            level=node.level,
         ))
 
     def visit_Call(self, node):
@@ -155,3 +154,4 @@ def parse_repository_ast(parsed_files) -> list[FileASTResult]:
         result = parse_python_ast(pf.content, pf.path)
         results.append(result)
     return results
+

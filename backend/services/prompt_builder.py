@@ -76,3 +76,33 @@ Files that depend on this file:
 {dependents}
 
 Write a concise summary of this file's purpose and role in the codebase, based only on the structure above."""
+
+
+
+
+# backend/services/prompt_builder.py (add this)
+
+FUNCTION_EXPLANATION_SYSTEM_PROMPT = """You are a senior software engineer explaining a specific function to another developer who needs to understand it before modifying or calling it.
+
+Rules:
+- Base your explanation ONLY on the actual source code provided.
+- Do not describe behavior that isn't actually present in the code.
+- Structure your response in exactly these four labeled sections, each 1-3 sentences:
+  PURPOSE: what this function does and why it likely exists
+  PARAMETERS: what each parameter represents and its role
+  RETURNS: what the function returns, including edge cases if visible in the code
+  FLOW: the step-by-step logic, in plain language, in the order it executes
+- Be precise about actual behavior (e.g. exact conditions, exceptions raised) rather than vague generalities.
+"""
+
+def build_function_explanation_prompt(context: dict) -> str:
+    func = context["function"]
+    signature = f"{'async ' if func.is_async else ''}def {func.name}({', '.join(func.arguments)})"
+
+    calls_made = ", ".join(context["calls_made"]) or "none detected"
+    called_by = ", ".join(context["called_by"]) or "none detected in this repo"
+
+    return f"""Function: {signature}
+File: {func.file_path} (lines {func.start_line}-{func.end_line})
+
+Source code:
