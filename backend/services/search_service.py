@@ -4,6 +4,8 @@ from services.vector_db_service import get_collection
 from models.search_models import SearchRequest, SearchResponse, SearchResultItem
 from config.rerank_config import INITIAL_RETRIEVAL_K, FINAL_TOP_K
 
+MIN_SIMILARITY_SCORE = 0.80
+
 
 def _load_rerank_service():
     try:
@@ -53,10 +55,13 @@ def semantic_search(request: SearchRequest, use_reranking: bool = True) -> Searc
                 similarity_score=round(similarity, 4),
             ))
 
+    candidates = [c for c in candidates if c.similarity_score >= MIN_SIMILARITY_SCORE]
+
     if use_reranking and candidates:
         rerank_service = _load_rerank_service()
         if rerank_service is not None:
-            final_results = rerank_service.rerank(request.query, candidates, top_k=FINAL_TOP_K)
+            top_k = min(FINAL_TOP_K, request.top_k)
+            final_results = rerank_service.rerank(request.query, candidates, top_k=top_k)
         else:
             final_results = candidates[:request.top_k]
     else:

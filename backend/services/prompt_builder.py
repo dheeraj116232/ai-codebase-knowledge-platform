@@ -106,3 +106,14 @@ def build_function_explanation_prompt(context: dict) -> str:
 File: {func.file_path} (lines {func.start_line}-{func.end_line})
 
 Source code:
+```{context.get("language", "")}
+{context["source_code"]}
+```
+
+Calls made:
+{calls_made}
+
+Called by:
+{called_by}
+
+Explain this function using exactly the required sections."""

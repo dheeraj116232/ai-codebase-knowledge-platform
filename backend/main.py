@@ -23,6 +23,14 @@ from services.callgraph_service import build_call_graph, build_call_graph_networ
 from models.explain_models import FileExplanationRequest
 from services.explain_service import explain_file
 from services.cache import get_cached_ast, get_cached_graph
+from models.explain_models import FunctionExplanationRequest
+from services.explain_service import explain_function
+from services.cache import get_cached_ast, get_cached_graph, get_cached_parse
+from models.codesearch_models import CodeSearchRequest
+from services.codesearch_service import code_search
+from services.cache import get_cached_ast
+from services.diagram_service import build_dependency_diagram
+from services.cache import get_cached_graph
 
 app = FastAPI()
 
@@ -310,20 +318,46 @@ def callgraph(request: CloneRequest):
     }
     
 
-@app.post("/explain-file")
-def explain_file_endpoint(request: FileExplanationRequest):
+@app.post("/explain-function")
+def explain_function_endpoint(request: FunctionExplanationRequest):
     ast_results = get_cached_ast(request.repo_name)
-    dependency_graph = get_cached_graph(request.repo_name)
+    parsed = get_cached_parse(request.repo_name)
+    call_graph_result = get_cached_graph(request.repo_name)  # or a separate call-graph cache — see note below
 
-    if ast_results is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Repository not analyzed yet. Call /analyze and /dependencies first."
-        )
+    if ast_results is None or parsed is None:
+        raise HTTPException(status_code=404, detail="Repository not analyzed yet.")
+
+    target_file = next((f for f in parsed.files if f.path == request.file_path), None)
+    if target_file is None or not target_file.content:
+        raise HTTPException(status_code=404, detail=f"File not found: {request.file_path}")
 
     try:
-        result = explain_file(request.file_path, ast_results, dependency_graph)
+        result = explain_function(
+            request.repo_name, request.file_path, request.function_name,
+            ast_results, target_file.content, call_graph_result,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+    return result
+
+@app.post("/code-search")
+def code_search_endpoint(request: CodeSearchRequest):
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    ast_results = get_cached_ast(request.repo_name)
+    if ast_results is None:
+        raise HTTPException(status_code=404, detail="Repository not analyzed yet. Call /analyze first.")
+
+    result = code_search(request, ast_results)
+    return result
+
+@app.get("/diagram/{repo_name}")
+def diagram(repo_name: str):
+    graph = get_cached_graph(repo_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Repository not analyzed yet. Call /dependencies first.")
+
+    result = build_dependency_diagram(graph, repo_name)
     return result

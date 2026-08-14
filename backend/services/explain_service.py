@@ -12,7 +12,10 @@ from services.prompt_builder import (
 )
 from models.ast_models import FileASTResult, FunctionInfo
 from models.explain_models import FileExplanationResponse
-
+from services.groq_service import get_groq_client
+from config.llm_config import GROQ_MODEL, TEMPERATURE
+from services.prompt_builder import FUNCTION_EXPLANATION_SYSTEM_PROMPT, build_function_explanation_prompt
+from models.explain_models import FunctionExplanationResponse
 
 def gather_file_context(
     file_path: str,
@@ -264,42 +267,83 @@ def gather_function_context(
         "called_by": sorted(set(called_by)),
     }
 
+# backend/services/explain_service.py (add this)
+import re
 
-def parse_structured_explanation(
-    raw_text: str,
-) -> dict:
-    """Extract structured explanation sections."""
-
-    sections = {
-        "purpose": "",
-        "parameters_explained": "",
-        "returns_explained": "",
-        "flow_summary": "",
-    }
+def parse_structured_explanation(raw_text: str) -> dict:
+    """Extract PURPOSE/PARAMETERS/RETURNS/FLOW sections from the model's structured response."""
+    sections = {"purpose": "", "parameters_explained": "", "returns_explained": "", "flow_summary": ""}
 
     patterns = {
-        "purpose": (
-            r"PURPOSE:\s*(.*?)(?=PARAMETERS:|$)"
-        ),
-        "parameters_explained": (
-            r"PARAMETERS:\s*(.*?)(?=RETURNS:|$)"
-        ),
-        "returns_explained": (
-            r"RETURNS:\s*(.*?)(?=FLOW:|$)"
-        ),
-        "flow_summary": (
-            r"FLOW:\s*(.*?)$"
-        ),
+        "purpose": r"PURPOSE:\s*(.*?)(?=PARAMETERS:|$)",
+        "parameters_explained": r"PARAMETERS:\s*(.*?)(?=RETURNS:|$)",
+        "returns_explained": r"RETURNS:\s*(.*?)(?=FLOW:|$)",
+        "flow_summary": r"FLOW:\s*(.*?)$",
     }
 
     for key, pattern in patterns.items():
-        match = re.search(
-            pattern,
-            raw_text or "",
-            re.DOTALL | re.IGNORECASE,
-        )
-
+        match = re.search(pattern, raw_text, re.DOTALL | re.IGNORECASE)
         if match:
             sections[key] = match.group(1).strip()
 
     return sections
+
+def parse_structured_explanation(raw_text: str) -> dict:
+    sections = {"purpose": "", "parameters_explained": "", "returns_explained": "", "flow_summary": ""}
+    patterns = {
+        "purpose": r"PURPOSE:\s*(.*?)(?=PARAMETERS:|$)",
+        "parameters_explained": r"PARAMETERS:\s*(.*?)(?=RETURNS:|$)",
+        "returns_explained": r"RETURNS:\s*(.*?)(?=FLOW:|$)",
+        "flow_summary": r"FLOW:\s*(.*?)$",
+    }
+    for key, pattern in patterns.items():
+        match = re.search(pattern, raw_text, re.DOTALL | re.IGNORECASE)
+        if match:
+            sections[key] = match.group(1).strip()
+
+    # Fallback: if parsing mostly failed, don't lose the content
+    if not any(sections.values()):
+        sections["flow_summary"] = raw_text.strip()
+
+    return sections
+
+
+
+def explain_function(
+    repo_name: str, file_path: str, function_name: str,
+    ast_results: list[FileASTResult], file_content: str, call_graph_result,
+) -> FunctionExplanationResponse:
+    context = gather_function_context(repo_name, file_path, function_name, ast_results, file_content, call_graph_result)
+
+    if context is None:
+        raise ValueError(f"Function '{function_name}' not found in {file_path}")
+
+    client = get_groq_client()
+    prompt = build_function_explanation_prompt(context)
+
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": FUNCTION_EXPLANATION_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=TEMPERATURE,
+        max_tokens=500,
+    )
+
+    parsed = parse_structured_explanation(response.choices[0].message.content)
+    func = context["function"]
+
+    return FunctionExplanationResponse(
+        function_name=func.name,
+        file_path=func.file_path,
+        start_line=func.start_line,
+        end_line=func.end_line,
+        signature=f"def {func.name}({', '.join(func.arguments)})",
+        purpose=parsed["purpose"],
+        parameters_explained=parsed["parameters_explained"],
+        returns_explained=parsed["returns_explained"],
+        flow_summary=parsed["flow_summary"],
+        calls_made=context["calls_made"],
+        called_by=context["called_by"],
+    )
