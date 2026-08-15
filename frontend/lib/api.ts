@@ -1,6 +1,19 @@
 // frontend/lib/api.ts
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export async function buildDependencies(githubUrl: string) {
+  const res = await fetch(`${API_BASE}/dependencies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ github_url: githubUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to build dependencies");
+  }
+  return res.json();
+}
+
 export async function indexRepository(githubUrl: string) {
   const res = await fetch(`${API_BASE}/index`, {
     method: "POST",

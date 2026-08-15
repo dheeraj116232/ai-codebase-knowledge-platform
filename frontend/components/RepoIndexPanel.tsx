@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
-import { indexRepository } from "@/lib/api";
+import { indexRepository, buildDependencies } from "@/lib/api";
 
 interface Props {
   onIndexed: (repoName: string) => void;
@@ -45,6 +45,8 @@ export default function RepoIndexPanel({ onIndexed }: Props) {
         files: result.files_indexed,
         chunks: result.chunks_stored,
       });
+
+      await buildDependencies(url.trim());
 
       setStatus("indexed");
       onIndexed(result.repo_name);
