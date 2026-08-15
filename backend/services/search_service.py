@@ -2,7 +2,7 @@
 from services.embedding_service import embedding_service
 from services.vector_db_service import get_collection
 from models.search_models import SearchRequest, SearchResponse, SearchResultItem
-from config.rerank_config import INITIAL_RETRIEVAL_K, FINAL_TOP_K
+from config.rerank_config import INITIAL_RETRIEVAL_K, FINAL_TOP_K, RERANKING_ENABLED
 
 MIN_SIMILARITY_SCORE = 0.80
 
@@ -15,7 +15,7 @@ def _load_rerank_service():
         return None
 
 
-def semantic_search(request: SearchRequest, use_reranking: bool = True) -> SearchResponse:
+def semantic_search(request: SearchRequest, use_reranking: bool = RERANKING_ENABLED) -> SearchResponse:
     collection = get_collection()
 
     existing = collection.get(where={"repo_name": request.repo_name}, limit=1)
@@ -57,6 +57,8 @@ def semantic_search(request: SearchRequest, use_reranking: bool = True) -> Searc
 
     candidates = [c for c in candidates if c.similarity_score >= MIN_SIMILARITY_SCORE]
 
+    # STAGE 2: rerank the candidates, keep only the best few — falls back gracefully
+    # if rerank_service isn't installed (e.g. removed to save memory on Render)
     if use_reranking and candidates:
         rerank_service = _load_rerank_service()
         if rerank_service is not None:

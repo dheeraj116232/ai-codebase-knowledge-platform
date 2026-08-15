@@ -31,7 +31,10 @@ from services.codesearch_service import code_search
 from services.cache import get_cached_ast
 from services.diagram_service import build_dependency_diagram
 from services.cache import get_cached_graph
-
+from services.cache import set_cached_ast, set_cached_graph, set_cached_callgraph
+from services.unified_ast_service import parse_repository_ast
+from services.dependency_graph_service import build_dependency_graph
+from services.callgraph_service import build_call_graph
 app = FastAPI()
 
 # backend/main.py
@@ -361,3 +364,45 @@ def diagram(repo_name: str):
 
     result = build_dependency_diagram(graph, repo_name)
     return result
+
+
+@app.post("/index")
+def index_repository(request: CloneRequest):
+    import time
+    start = time.time()
+
+    clone_result = clone_repository(request.github_url)
+    repo_name = clone_result["repo_name"]
+    local_path = clone_result["local_path"]
+
+    parsed = parse_repository(local_path, repo_name)
+    chunks = chunk_repository(parsed.files, repo_name)
+
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No indexable files found in repository.")
+
+    vectors = embedding_service.embed_texts([c.content for c in chunks])
+    store_chunks(chunks, vectors, repo_name)
+
+    # NEW: run structural analysis and cache it, so explain-file/function,
+    # code-search, and diagram endpoints work immediately without extra calls
+    ast_results = parse_repository_ast(parsed.files)
+    set_cached_ast(repo_name, ast_results)
+
+    graph_result, graph = build_dependency_graph(ast_results, repo_name)
+    set_cached_graph(repo_name, graph)
+
+    callgraph_result = build_call_graph(ast_results, repo_name)
+    set_cached_callgraph(repo_name, callgraph_result)
+
+    elapsed = time.time() - start
+
+    return {
+        "repo_name": repo_name,
+        "files_indexed": len(parsed.files),
+        "chunks_stored": len(chunks),
+        "functions_found": sum(len(r.functions) for r in ast_results),
+        "classes_found": sum(len(r.classes) for r in ast_results),
+        "internal_dependencies": graph_result.total_internal_edges,
+        "time_seconds": round(elapsed, 2),
+    }
